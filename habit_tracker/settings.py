@@ -12,6 +12,8 @@ SECRET_KEY = 'django-insecure-oc69q2x5%)4g^xd&6aefonms^$&8(mm8w#7(ua$ls74=c-a)24
 
 DEBUG = True
 
+AUTH_USER_MODEL = 'users.User'
+
 ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
@@ -22,6 +24,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'users',
     'habits',
 ]
 
@@ -89,6 +92,14 @@ USE_I18N = True
 
 USE_TZ = True
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',  # Аутентификация по токену
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',  # Требуется аутентификация для всех endpoints
+    ]
+}
 
 STATIC_URL = 'static/'
 
