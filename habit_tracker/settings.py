@@ -14,7 +14,9 @@ DEBUG = True
 
 AUTH_USER_MODEL = 'users.User'
 
-ALLOWED_HOSTS = []
+CELERY_DEFAULT_QUEUE = 'celery'
+
+ALLOWED_HOSTS = ['*']  # Разрешить все хосты (для разработки)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -119,3 +121,37 @@ CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Moscow'
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',  # Или 'INFO'
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'telegram_bot': {
+            'handlers': ['console'],
+            'level': 'DEBUG',  # Или 'INFO'
+            'propagate': True,
+        },
+    },
+}
