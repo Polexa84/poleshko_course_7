@@ -18,19 +18,24 @@ CELERY_DEFAULT_QUEUE = 'celery'
 
 ALLOWED_HOSTS = ['*']  # Разрешить все хосты (для разработки)
 
-INSTALLED_APPS = [
+IINSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # Сторонние приложения
     'rest_framework',
     'rest_framework_simplejwt',
-    'users',
-    'habits.apps.HabitsConfig',
     'corsheaders',
-    'telegram_bot',
+    'django_celery_beat',  # Добавлено для периодических задач
+
+    # Локальные приложения
+    'users.apps.UsersConfig',
+    'habits.apps.HabitsConfig',
+    'telegram_bot.apps.TelegramBotConfig',
 ]
 
 MIDDLEWARE = [
@@ -134,6 +139,8 @@ CELERY_WORKER_CONCURRENCY = 4  # Оптимально для 4-ядерного 
 CELERY_TASK_ACKS_LATE = True  # Повторная обработка при сбоях
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Честное распределение задач
 CELERY_BROKER_POOL_LIMIT = None  # Без ограничений пула
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_STORE_EAGER_RESULT = True
 
 # Настройки логгирования
 LOGGING = {
