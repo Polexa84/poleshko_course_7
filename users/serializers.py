@@ -10,10 +10,11 @@ class RegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('username', 'email', 'password', 'password2')
+        fields = ('email', 'first_name', 'last_name', 'password', 'password2') # Добавлено first_name и last_name
         extra_kwargs = {
-            'username': {'required': True},
-            'email': {'required': True}
+            'email': {'required': True},
+            'first_name': {'required': True}, # Сделали обязательными
+            'last_name': {'required': True}, # Сделали обязательными
         }
 
     def validate(self, data):
@@ -22,21 +23,21 @@ class RegistrationSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        validated_data['password'] = make_password(validated_data['password'])
-        validated_data.pop('password2')
+        validated_data['password'] = make_password(validated_data.pop('password')) # Хешируем пароль и удаляем из validated_data
+        validated_data.pop('password2') # Удаляем password2
         return User.objects.create(**validated_data)
 
 
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField(required=True)
+    email = serializers.EmailField(required=True) # Используем email
     password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
 
     def validate(self, data):
-        username = data.get('username')
+        email = data.get('email')
         password = data.get('password')
 
-        if username and password:
-            user = authenticate(username=username, password=password)
+        if email and password:
+            user = authenticate(email=email, password=password) # Аутентифицируем по email
             if user:
                 if not user.is_active:
                     raise serializers.ValidationError("Пользователь неактивен.")
@@ -44,6 +45,6 @@ class LoginSerializer(serializers.Serializer):
             else:
                 raise serializers.ValidationError("Неверные учетные данные.")
         else:
-            raise serializers.ValidationError("Необходимо указать имя пользователя и пароль.")
+            raise serializers.ValidationError("Необходимо указать email и пароль.")
 
         return data

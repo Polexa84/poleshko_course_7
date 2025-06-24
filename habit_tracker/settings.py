@@ -26,7 +26,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'rest_framework.authtoken',
+    'rest_framework_simplejwt',
     'users',
     'habits.apps.HabitsConfig',
     'corsheaders',
@@ -104,7 +104,7 @@ USE_TZ = True
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',  # Аутентификация по токену
+        'rest_framework_simplejwt.authentication.JWTAuthentication',  # JWT аутентификация
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',  # Требуется аутентификация для всех endpoints
