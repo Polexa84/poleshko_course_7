@@ -27,7 +27,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'users',
-    'habits',
+    'habits.apps.HabitsConfig',
     'corsheaders',
     'telegram_bot',
 ]
@@ -115,13 +115,26 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
+# Настройки Celery
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Явно укажите host
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
-CELERY_ACCEPT_CONTENT = ['application/json']
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'visibility_timeout': 3600,
+    'health_check_interval': 10,
+    'socket_connect_timeout': 5,
+    'socket_keepalive': True
+}
+CELERY_ACCEPT_CONTENT = ['json']  # Изменил на просто 'json'
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Moscow'
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_WORKER_CONCURRENCY = 4  # Оптимально для 4-ядерного CPU
+CELERY_TASK_ACKS_LATE = True  # Повторная обработка при сбоях
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Честное распределение задач
+CELERY_BROKER_POOL_LIMIT = None  # Без ограничений пула
 
+# Настройки логгирования
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -137,8 +150,14 @@ LOGGING = {
     },
     'handlers': {
         'console': {
-            'level': 'DEBUG',  # Или 'INFO'
+            'level': 'DEBUG',
             'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': 'celery.log',
             'formatter': 'verbose'
         },
     },
@@ -146,12 +165,21 @@ LOGGING = {
         'django': {
             'handlers': ['console'],
             'level': 'INFO',
-            'propagate': True,
+            'propagate': False,
+        },
+        'celery': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
         },
         'telegram_bot': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        '': {  # Корневой логгер
             'handlers': ['console'],
-            'level': 'DEBUG',  # Или 'INFO'
-            'propagate': True,
+            'level': 'WARNING',
         },
     },
 }

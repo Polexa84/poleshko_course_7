@@ -1,101 +1,107 @@
 import logging
 import requests
 from celery import shared_task
+from celery.utils.log import get_task_logger  # Специальный логгер для Celery
 from django.conf import settings
 from .models import TelegramUser
 from habits.models import Habit
 from django.contrib.auth import get_user_model
+from requests.exceptions import RequestException
 
-logger = logging.getLogger(__name__)
+# Используем специальный логгер Celery
+logger = get_task_logger(__name__)
 User = get_user_model()
 
 
 def send_message(bot_token, chat_id, text):
+    """Улучшенная функция отправки сообщений с обработкой ошибок"""
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     data = {
         "chat_id": chat_id,
         "text": text,
+        "parse_mode": "Markdown"  # Добавляем поддержку разметки
     }
     try:
-        response = requests.post(url, data=data)
+        response = requests.post(url, data=data, timeout=10)  # Таймаут 10 сек
         response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Ошибка при отправке сообщения в Telegram: {e}")
+        return True
+    except RequestException as e:
+        logger.error(f"Ошибка отправки в Telegram: {e}\nURL: {url}\nData: {data}")
+        return False
 
 
-@shared_task
-def send_telegram_notification(habit_id):
-    """
-    Отправляет уведомление в Telegram о привычке.
-    """
+@shared_task(bind=True, max_retries=3)  # Добавляем автоматические повторы
+def send_telegram_notification(self, habit_id):
+    """Улучшенная задача отправки уведомлений"""
     try:
-        habit = Habit.objects.get(pk=habit_id)
+        logger.info(f"Начало обработки привычки ID: {habit_id}")
+
+        habit = Habit.objects.select_related('user').get(pk=habit_id)
         telegram_user = TelegramUser.objects.get(user=habit.user)
-        telegram_id = telegram_user.telegram_id
-        bot_token = settings.TELEGRAM_BOT_TOKEN
 
-        message = f"Напоминание: Пора выполнить привычку '{habit.action}' в {habit.time} в {habit.place}."
-        send_message(bot_token, telegram_id, message)
+        message = (
+            f"⏰ Напоминание:\n"
+            f"Привычка: *{habit.action}*\n"
+            f"Время: {habit.time.strftime('%H:%M') if habit.time else 'не указано'}\n"
+            f"Место: {habit.place or 'не указано'}"
+        )
 
-        logger.info(f"Уведомление отправлено в Telegram пользователю {habit.user.username} ({telegram_id})")
+        if not send_message(settings.TELEGRAM_BOT_TOKEN, telegram_user.telegram_id, message):
+            logger.warning(f"Не удалось отправить сообщение для habit_id={habit_id}")
+            self.retry(countdown=60)  # Повторить через 60 сек
 
-    except Habit.DoesNotExist:
-        logger.error(f"Привычка с ID {habit_id} не найдена.")
-    except TelegramUser.DoesNotExist:
-        logger.error(f"TelegramUser для пользователя {habit.user.username} не найден.")
+        logger.info(f"Успешно отправлено уведомление пользователю {habit.user.username}")
+
+    except Habit.DoesNotExist as e:
+        logger.error(f"Привычка не найдена: {e}")
+    except TelegramUser.DoesNotExist as e:
+        logger.error(f"TelegramUser не найден: {e}")
     except Exception as e:
-        logger.error(f"Ошибка при отправке уведомления в Telegram: {e}")
+        logger.error(f"Критическая ошибка: {e}", exc_info=True)
+        self.retry(exc=e, countdown=300)  # Повторить через 5 мин
 
-@shared_task
-def process_telegram_message(message_json):
-    """
-    Обрабатывает входящие сообщения от Telegram.
-    """
+
+@shared_task(bind=True)
+def process_telegram_message(self, message_json):
+    """Улучшенная обработка входящих сообщений"""
     try:
-        logger.info("Received message from Telegram")  # Add this line
+        logger.info(f"Получено сообщение: {message_json}")
+
         message = message_json['message']
         chat_id = message['chat']['id']
-        text = message['text']
+        text = message.get('text', '').strip()
         bot_token = settings.TELEGRAM_BOT_TOKEN
 
-        if text == '/start':
-            logger.info("Received /start command")  # Add this line
-            # Получаем user_id из message (если он есть)
-            user_id = None
-            entities = message.get('entities', [])
-            for entity in entities:
-                if entity['type'] == 'mention':
-                    username = message['text'][entity['offset'] + 1:entity['offset'] + entity['length']]
-                    try:
-                        logger.info(f"Trying to find user with username: {username}")  # Add this line
-                        user = User.objects.get(username=username)
-                        user_id = user.id
-                        logger.info(f"User found with ID: {user_id}")  # Add this line
-                    except User.DoesNotExist:
-                        logger.warning(f"User with username {username} not found.")  # Add this line
-                        pass
+        if text.startswith('/start'):
+            logger.info("Обработка команды /start")
 
-            # Если user_id не найден, отправляем сообщение с просьбой указать имя пользователя
-            if not user_id:
-                send_message(bot_token, chat_id, "Пожалуйста, укажите ваше имя пользователя Django после команды /start, например: /start your_username")
+            # Извлекаем username из команды (/start username)
+            username = text[7:].strip() if len(text) > 7 else None
+
+            if not username:
+                send_message(bot_token, chat_id, "Введите: /start ваш_username")
                 return
 
             try:
-                # Пытаемся найти TelegramUser по user_id
-                telegram_user = TelegramUser.objects.get(user_id=user_id)
-                telegram_user.telegram_id = chat_id
-                telegram_user.save()
-                send_message(bot_token, chat_id, f"Telegram ID успешно обновлен для пользователя {telegram_user.user.username}!")
-            except TelegramUser.DoesNotExist:
-                # Если TelegramUser не существует, создаем его
-                user = User.objects.get(pk=user_id)
-                TelegramUser.objects.create(user=user, telegram_id=chat_id)
-                send_message(bot_token, chat_id, f"Telegram ID успешно зарегистрирован для пользователя {user.username}!")
+                user = User.objects.get(username=username)
+                TelegramUser.objects.update_or_create(
+                    user=user,
+                    defaults={'telegram_id': chat_id}
+                )
+                send_message(bot_token, chat_id,
+                             f"✅ Привязан аккаунт: {user.username}\n"
+                             f"Теперь вы будете получать уведомления!")
             except User.DoesNotExist:
-                send_message(bot_token, chat_id, "Пользователь с таким именем не найден.")
-            except Exception as e:
-                logger.error(f"Ошибка при обработке команды /start: {e}")
+                send_message(bot_token, chat_id, "❌ Пользователь не найден")
+                logger.warning(f"Пользователь не найден: {username}")
+
         else:
-            send_message(bot_token, chat_id, "Я понимаю только команду /start.")
+            send_message(bot_token, chat_id,
+                         "Я понимаю только команду /start\n"
+                         "Пример: /start ваш_логин")
+
+    except KeyError as e:
+        logger.error(f"Ошибка формата сообщения: {e}\n{message_json}")
     except Exception as e:
-        logger.error(f"Ошибка при обработке сообщения Telegram: {e}")
+        logger.error(f"Ошибка обработки сообщения: {e}", exc_info=True)
+        self.retry(exc=e, countdown=60)
