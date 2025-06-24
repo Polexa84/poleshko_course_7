@@ -12,7 +12,6 @@ from requests.exceptions import RequestException
 logger = get_task_logger(__name__)
 User = get_user_model()
 
-
 def send_message(bot_token, chat_id, text):
     """Улучшенная функция отправки сообщений с обработкой ошибок"""
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -28,7 +27,6 @@ def send_message(bot_token, chat_id, text):
     except RequestException as e:
         logger.error(f"Ошибка отправки в Telegram: {e}\nURL: {url}\nData: {data}")
         return False
-
 
 @shared_task(bind=True, max_retries=3)  # Добавляем автоматические повторы
 def send_telegram_notification(self, habit_id):
@@ -46,11 +44,12 @@ def send_telegram_notification(self, habit_id):
             f"Место: {habit.place or 'не указано'}"
         )
 
-        if not send_message(settings.TELEGRAM_BOT_TOKEN, telegram_user.telegram_id, message):
+        #  Исправлено на использование telegram_user.tg_chat_id
+        if not send_message(settings.TELEGRAM_BOT_TOKEN, telegram_user.tg_chat_id, message):
             logger.warning(f"Не удалось отправить сообщение для habit_id={habit_id}")
             self.retry(countdown=60)  # Повторить через 60 сек
 
-        logger.info(f"Успешно отправлено уведомление пользователю {habit.user.username}")
+        logger.info(f"Успешно отправлено уведомление пользователю {habit.user.email}") # Используем email
 
     except Habit.DoesNotExist as e:
         logger.error(f"Привычка не найдена: {e}")
@@ -59,7 +58,6 @@ def send_telegram_notification(self, habit_id):
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}", exc_info=True)
         self.retry(exc=e, countdown=300)  # Повторить через 5 мин
-
 
 @shared_task(bind=True)
 def process_telegram_message(self, message_json):
@@ -75,30 +73,30 @@ def process_telegram_message(self, message_json):
         if text.startswith('/start'):
             logger.info("Обработка команды /start")
 
-            # Извлекаем username из команды (/start username)
-            username = text[7:].strip() if len(text) > 7 else None
+            # Извлекаем email из команды (/start email@example.com)
+            email = text[7:].strip() if len(text) > 7 else None
 
-            if not username:
-                send_message(bot_token, chat_id, "Введите: /start ваш_username")
+            if not email:
+                send_message(bot_token, chat_id, "Введите: /start ваш_email@example.com")
                 return
 
             try:
-                user = User.objects.get(username=username)
+                user = User.objects.get(email=email)
                 TelegramUser.objects.update_or_create(
                     user=user,
-                    defaults={'telegram_id': chat_id}
+                    defaults={'telegram_id': chat_id, 'tg_chat_id': chat_id}
                 )
                 send_message(bot_token, chat_id,
-                             f"✅ Привязан аккаунт: {user.username}\n"
+                             f"✅ Привязан аккаунт: {user.email}\n"
                              f"Теперь вы будете получать уведомления!")
             except User.DoesNotExist:
                 send_message(bot_token, chat_id, "❌ Пользователь не найден")
-                logger.warning(f"Пользователь не найден: {username}")
+                logger.warning(f"Пользователь не найден: {email}")
 
         else:
             send_message(bot_token, chat_id,
                          "Я понимаю только команду /start\n"
-                         "Пример: /start ваш_логин")
+                         "Пример: /start ваш_email@example.com")
 
     except KeyError as e:
         logger.error(f"Ошибка формата сообщения: {e}\n{message_json}")
