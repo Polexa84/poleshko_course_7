@@ -11,8 +11,8 @@ class Habit(models.Model):
     is_pleasant = models.BooleanField(default=False, verbose_name='Признак приятной привычки', help_text='Укажите, является ли привычка приятной.')
     related_habit = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='related_to', verbose_name='Связанная привычка', help_text='Приятная привычка, связанная с выполнением этой привычки.')
     periodicity = models.IntegerField(default=1, verbose_name='Периодичность (в днях)', help_text='Периодичность выполнения привычки (в днях, от 1 до 7).')
-    reward = models.CharField(max_length=255, verbose_name='Вознаграждение', blank=True, help_text='Вознаграждение после выполнения привычки.') # Разрешаем пустое вознаграждение
-    execution_time = models.IntegerField(verbose_name='Время на выполнение (в секундах)', help_text='Время, необходимое для выполнения привычки (в секундах).')
+    reward = models.CharField(max_length=255, verbose_name='Вознаграждение', blank=True, help_text='Вознаграждение после выполнения привычки.')  # Разрешаем пустое вознаграждение
+    execution_time = models.IntegerField(default=120, verbose_name='Время на выполнение (в секундах)', help_text='Время, необходимое для выполнения привычки (в секундах).')  # Установили default=120
     is_public = models.BooleanField(default=False, verbose_name='Признак публичности', help_text='Укажите, является ли привычка публичной.')
 
     def __str__(self):
@@ -22,7 +22,7 @@ class Habit(models.Model):
         if self.related_habit and self.reward:
             raise ValidationError("Нельзя выбирать и связанную привычку, и вознаграждение одновременно.")
 
-        if self.execution_time > 120:
+        if self.execution_time is not None and self.execution_time > 120: # Добавлена проверка на None, хотя default=120
             raise ValidationError("Время выполнения не должно превышать 120 секунд.")
 
         if self.related_habit and not self.related_habit.is_pleasant:
@@ -33,13 +33,13 @@ class Habit(models.Model):
                 raise ValidationError("У приятной привычки не может быть вознаграждения или связанной привычки.")
 
         if self.periodicity < 1 or self.periodicity > 7:
-            raise ValidationError("Нельзя выполнять привычку реже, чем раз в неделю (7 дней).")
+            raise ValidationError("Периодичность должна быть от 1 до 7 дней.")
 
     def save(self, *args, **kwargs):
-        self.full_clean() # Вызываем clean() перед сохранением
+        self.full_clean()  # Вызываем clean() перед сохранением
         super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = 'Привычка'
         verbose_name_plural = 'Привычки'
-        ordering = ['time'] # Сортируем привычки по времени выполнения
+        ordering = ['time']  # Сортируем привычки по времени выполнения
