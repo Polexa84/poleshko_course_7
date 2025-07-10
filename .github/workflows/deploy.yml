@@ -18,112 +18,93 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testdb
         options: >-
-          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       redis:
-        image: redis:latest
+        image: redis:7-alpine
         ports:
           - "6379:6379"
-    env:
-      POSTGRES_DB_NAME: testdb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
-    - name: Set up Python
+    env:
+      DATABASE_URL: postgres://postgres:password@postgres:5432/testdb
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_SETTINGS_MODULE: habit_tracker.settings
+      PYTHONUNBUFFERED: 1
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-
-    - name: Cache pip
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+        cache: 'pip'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install pytest pytest-django
 
-    - name: Set up database
-      working-directory: .
-      run: python manage.py migrate
-      env:
-        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-
-    - name: Wait for Redis
+    - name: Wait for services
       run: |
-        wget https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh -O wait-for-it.sh
-        chmod +x wait-for-it.sh
-        ./wait-for-it.sh redis:6379 -t 60  # Увеличиваем таймаут до 60 секунд
+        apt-get update && apt-get install -y netcat
+        echo "Waiting for PostgreSQL..."
+        while ! nc -z postgres 5432; do sleep 1; done
+        echo "Waiting for Redis..."
+        while ! nc -z redis 6379; do sleep 1; done
+
+    - name: Run migrations
+      run: python manage.py migrate --no-input
 
     - name: Run tests
-      working-directory: .
-      run: python manage.py test
-      env:
-        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      run: |
+        python manage.py test --no-input --parallel 4
+        pytest -v --cov=.
 
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-    - name: Check out code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Set up SSH
+    - name: Setup SSH
       uses: webfactory/ssh-agent@v0.8.0
       with:
-        ssh-private-key: ${{ secrets.SSH_KEY }}
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-    - name: Add server host key to known_hosts
+    - name: Add server to known hosts
       run: |
         mkdir -p ~/.ssh
-        ssh-keyscan ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
-        chmod 600 ~/.ssh/known_hosts
+        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
 
-    - name: Copy project files to server
+    - name: Rsync deployment
       run: |
-        echo "Copying project files to server..."
-        rsync -avz --exclude '__pycache__' . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
-        echo "Files copied."
+        rsync -avz --delete \
+          --exclude '__pycache__' \
+          --exclude '.env' \
+          --exclude '.git' \
+          ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
 
-    - name: Install dependencies, apply migrations, collect static files
+    - name: Remote deployment commands
       run: |
-        echo "Executing commands on server..."
-        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          set -e  # Выходить при первой ошибке
-          set -x  # Подробный вывод выполняемых команд
-          echo "Changing directory to deployment folder..."
-          export DJANGO_SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}"
-          PROJECT_DIR="/home/deployer/poleshko_hw_30"  # manage.py в корне
-          cd "$PROJECT_DIR"
-
-          echo "Activating virtual environment..."
-          source /home/deployer/poleshko_hw_30/venv/bin/activate  # Путь к виртуальному окружению
-
-          echo "Installing project dependencies..."
-          pip install -r requirements.txt
-          echo "Applying database migrations..."
-          python manage.py migrate
-          echo "Collecting static files..."
-          python manage.py collectstatic --noinput
-          echo "Deployment commands executed successfully."
+        ssh -o StrictHostKeyChecking=no \
+          ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          set -euxo pipefail
+          cd ${{ secrets.DEPLOY_DIR }}
+          source venv/bin/activate
+          pip install -r requirements.txt --no-cache-dir
+          python manage.py migrate --no-input
+          python manage.py collectstatic --no-input
+          sudo systemctl restart gunicorn
+          sudo systemctl reload nginx
         EOF
-        echo "Commands executed on server."
-
-    - name: Restart application
-      run: |
-        echo "Restarting application..."
-        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          set -e
-          set -x
-          sudo systemctl restart gunicorn.service  # Имя сервиса
-          sudo systemctl reload nginx  # Перезагрузка Nginx
-        EOF
-        echo "Application restarted."
