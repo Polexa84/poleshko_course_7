@@ -10,9 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:14  # Укажите нужную версию PostgreSQL
+        image: postgres:14
         ports:
           - "5432:5432"
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
+      redis:  # Добавляем сервис Redis
+        image: redis:latest  # Используем образ Redis
+        ports:
+          - "6379:6379"  # Пробрасываем порт
         env:
           POSTGRES_USER: postgres  # Значение по умолчанию, можно изменить
           POSTGRES_PASSWORD: password  # Значение по умолчанию, можно изменить
