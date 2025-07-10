@@ -108,7 +108,7 @@ jobs:
     - name: Restart application
       run: |
         echo "Restarting application..."
-        ssh ${{ secrets.SSH_USER }}@${{{ secrets.SERVER_IP }}} << 'EOF'
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
           set -e
           set -x
           sudo systemctl restart gunicorn.service  # Имя сервиса
