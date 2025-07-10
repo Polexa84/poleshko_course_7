@@ -46,10 +46,14 @@ jobs:
     - name: Set up database
       working-directory: . # manage.py в корне
       run: python manage.py migrate
+      env:
+        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
 
     - name: Run tests
       working-directory: . # manage.py в корне
       run: python manage.py test
+      env:
+        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
 
     env:
       POSTGRES_DB_NAME: testdb  # Имя тестовой базы данных
