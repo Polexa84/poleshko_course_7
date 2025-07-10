@@ -8,7 +8,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    needs: [ ]
     services:
       postgres:
         image: postgres:14
@@ -24,11 +23,6 @@ jobs:
         image: redis:latest
         ports:
           - "6379:6379"
-        healthcheck:
-          test: ["CMD", "redis-cli", "ping"]
-          interval: 10s
-          timeout: 5s
-          retries: 3
     env:
       POSTGRES_DB_NAME: testdb
       POSTGRES_USER: postgres
@@ -61,6 +55,12 @@ jobs:
       run: python manage.py migrate
       env:
         DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+
+    - name: Wait for Redis
+      run: sleep 5  # Ждем 5 секунд
+
+    - name: Check Redis connection
+      run: redis-cli ping
 
     - name: Run tests
       working-directory: .
