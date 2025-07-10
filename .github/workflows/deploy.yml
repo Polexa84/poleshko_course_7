@@ -60,7 +60,7 @@ jobs:
       run: |
         wget https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh -O wait-for-it.sh
         chmod +x wait-for-it.sh
-        ./wait-for-it.sh redis:6379 -t 30 # Wait for 30 seconds
+        ./wait-for-it.sh redis:6379 -t 60  # Увеличиваем таймаут до 60 секунд
 
     - name: Run tests
       working-directory: .
