@@ -8,35 +8,28 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:14
-        ports:
-          - "5432:5432"
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testdb
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
       redis:
         image: redis:7-alpine
         ports:
-          - "6379:6379"
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
 
     env:
-      DATABASE_URL: postgres://postgres:password@postgres:5432/testdb
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgres://postgres:password@localhost:5432/testdb
+      REDIS_URL: redis://localhost:6379/0
       DJANGO_SETTINGS_MODULE: habit_tracker.settings
-      PYTHONUNBUFFERED: 1
 
     steps:
     - uses: actions/checkout@v4
@@ -44,30 +37,52 @@ jobs:
     - name: Set up Python 3.10
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
-        cache: 'pip'
+        python-version: "3.10"
+        cache: "pip"
 
-    - name: Install dependencies
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libpq-dev python3-dev
+
+    - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-django
+        pip install pytest pytest-cov
 
-    - name: Wait for services
+    - name: Wait for PostgreSQL
       run: |
-        apt-get update && apt-get install -y netcat
-        echo "Waiting for PostgreSQL..."
-        while ! nc -z postgres 5432; do sleep 1; done
-        echo "Waiting for Redis..."
-        while ! nc -z redis 6379; do sleep 1; done
+        for i in {1..10}; do
+          if nc -z localhost 5432; then
+            echo "PostgreSQL is ready"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "PostgreSQL not ready in time"
+        exit 1
+
+    - name: Wait for Redis
+      run: |
+        for i in {1..10}; do
+          if nc -z localhost 6379; then
+            echo "Redis is ready"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "Redis not ready in time"
+        exit 1
 
     - name: Run migrations
       run: python manage.py migrate --no-input
 
     - name: Run tests
       run: |
-        python manage.py test --no-input --parallel 4
-        pytest -v --cov=.
+        python manage.py test --no-input --parallel 2
+        pytest -v --cov=. --cov-report=xml
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
 
   deploy:
     needs: test
@@ -90,21 +105,26 @@ jobs:
     - name: Rsync deployment
       run: |
         rsync -avz --delete \
-          --exclude '__pycache__' \
-          --exclude '.env' \
-          --exclude '.git' \
-          ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
+          --exclude='.git/' \
+          --exclude='.github/' \
+          --exclude='.venv/' \
+          --exclude='__pycache__/' \
+          --exclude='*.pyc' \
+          --exclude='*.pyo' \
+          --exclude='*.pyd' \
+          ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_PATH }}
 
-    - name: Remote deployment commands
+    - name: Execute remote commands
       run: |
         ssh -o StrictHostKeyChecking=no \
           ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
           set -euxo pipefail
-          cd ${{ secrets.DEPLOY_DIR }}
+          cd ${{ secrets.DEPLOY_PATH }}
           source venv/bin/activate
           pip install -r requirements.txt --no-cache-dir
           python manage.py migrate --no-input
           python manage.py collectstatic --no-input
           sudo systemctl restart gunicorn
           sudo systemctl reload nginx
+          echo "Deployment completed successfully"
         EOF
