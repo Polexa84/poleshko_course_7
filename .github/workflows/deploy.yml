@@ -54,7 +54,7 @@ jobs:
 
     - name: Run tests
       working-directory: .
-      run: python manage.py test
+      run: python manage.py test --settings=habit_tracker.settings_test
       env:
         DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
 
