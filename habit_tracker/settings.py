@@ -18,21 +18,17 @@ CELERY_DEFAULT_QUEUE = 'celery'
 
 ALLOWED_HOSTS = ['*']  # Разрешить все хосты (для разработки)
 
-IINSTALLED_APPS = [
+INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
-    # Сторонние приложения
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
-    'django_celery_beat',  # Добавлено для периодических задач
-
-    # Локальные приложения
+    'django_celery_beat',
     'users.apps.UsersConfig',
     'habits.apps.HabitsConfig',
     'telegram_bot.apps.TelegramBotConfig',
@@ -122,15 +118,15 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Настройки Celery
-CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Явно укажите host
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_BROKER_URL = 'redis://redis:6379/0'  # Используйте имя сервиса Redis!
+CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
 CELERY_BROKER_TRANSPORT_OPTIONS = {
     'visibility_timeout': 3600,
     'health_check_interval': 10,
     'socket_connect_timeout': 5,
     'socket_keepalive': True
 }
-CELERY_ACCEPT_CONTENT = ['json']  # Изменил на просто 'json'
+CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Moscow'
@@ -139,8 +135,8 @@ CELERY_WORKER_CONCURRENCY = 4  # Оптимально для 4-ядерного 
 CELERY_TASK_ACKS_LATE = True  # Повторная обработка при сбоях
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Честное распределение задач
 CELERY_BROKER_POOL_LIMIT = None  # Без ограничений пула
-CELERY_TASK_ALWAYS_EAGER = True
-CELERY_TASK_STORE_EAGER_RESULT = True
+CELERY_TASK_ALWAYS_EAGER = False  # Включите для локальной разработки (НЕ для production!)
+CELERY_TASK_STORE_EAGER_RESULT = False # Включите для локальной разработки (НЕ для production!)
 
 # Настройки логгирования
 LOGGING = {

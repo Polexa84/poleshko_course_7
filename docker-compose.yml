@@ -1,11 +1,13 @@
-version: "3.9"
+version: "3.12"
 
 services:
   web:
-    build: .
-    command: gunicorn habit_tracker.wsgi:application --bind 0.0.0.0:8000  # Django с Gunicorn
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: gunicorn habit_tracker.wsgi:application --bind 0.0.0.0:8000
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=habit_tracker.settings
       - DB_HOST=db
@@ -15,14 +17,16 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
     volumes:
-      - .:/app
+      - .:/app  # Убрать для production
     depends_on:
       - db
       - redis
 
   celery_worker:
-    build: .
-    command: celery -A habit_tracker.celery worker -l INFO  # Celery worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A habit_tracker.celery worker -l INFO  # Добавлено: команда Celery
     environment:
       - DJANGO_SETTINGS_MODULE=habit_tracker.settings
       - DB_HOST=db
@@ -32,7 +36,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
     volumes:
-      - .:/app
+      - .:/app  # Убрать для production
     depends_on:
       - db
       - redis
@@ -55,8 +59,11 @@ services:
     image: nginx:latest
     ports:
       - "8080:80"
+      - "443:443"  # Для HTTPS
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./cert.pem:/etc/nginx/cert.pem
+      - ./key.pem:/etc/nginx/key.pem
     depends_on:
       - web
 
