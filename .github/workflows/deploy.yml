@@ -1,0 +1,115 @@
+name: Django CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - develop_1 # Убедитесь, что это правильная ветка для деплоя
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14  # Укажите нужную версию PostgreSQL
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_USER: postgres  # Значение по умолчанию, можно изменить
+          POSTGRES_PASSWORD: password  # Значение по умолчанию, можно изменить
+          POSTGRES_DB: testdb  # Значение по умолчанию, можно изменить
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Cache pip
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r myproject/requirements.txt # Укажите путь
+
+    - name: Set up database
+      working-directory: ./myproject # Укажите путь
+      run: python manage.py migrate
+
+    - name: Run tests
+      working-directory: ./myproject # Укажите путь
+      run: python manage.py test
+
+    env:
+      POSTGRES_DB_NAME: testdb  # Имя тестовой базы данных
+      POSTGRES_USER: postgres  # Имя пользователя PostgreSQL
+      POSTGRES_PASSWORD: password  # Пароль пользователя PostgreSQL
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_KEY }}
+
+    - name: Add server host key to known_hosts
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+        chmod 600 ~/.ssh/known_hosts
+
+    - name: Copy project files to server
+      run: |
+        echo "Copying project files to server..."
+        rsync -avz --exclude '__pycache__' . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
+        echo "Files copied."
+
+    - name: Install dependencies, apply migrations, collect static files
+      run: |
+        echo "Executing commands on server..."
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          set -e  # Выходить при первой ошибке
+          set -x  # Подробный вывод выполняемых команд
+          echo "Changing directory to deployment folder..."
+          PROJECT_DIR="/home/deployer/poleshko_hw_30/myproject" # Укажите путь!
+          cd "$PROJECT_DIR"
+
+          echo "Activating virtual environment..."
+          source /home/deployer/poleshko_hw_30/venv/bin/activate # Укажите путь!
+
+          echo "Installing project dependencies..."
+          pip install -r requirements.txt
+          echo "Applying database migrations..."
+          python manage.py migrate
+          echo "Collecting static files..."
+          python manage.py collectstatic --noinput
+          echo "Deployment commands executed successfully."
+        EOF
+        echo "Commands executed on server."
+
+    - name: Restart application
+      run: |
+        echo "Restarting application..."
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          set -e
+          set -x
+          sudo systemctl restart gunicorn.service # Укажите имя сервиса
+          sudo systemctl reload nginx # Перезагрузка Nginx
+        EOF
+        echo "Application restarted."
