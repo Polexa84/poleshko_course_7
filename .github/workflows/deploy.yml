@@ -59,6 +59,9 @@ jobs:
     - name: Wait for Redis
       run: sleep 5  # Ждем 5 секунд
 
+    - name: Install redis-tools
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+
     - name: Check Redis connection
       run: redis-cli ping
 
