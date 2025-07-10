@@ -16,11 +16,15 @@ click==8.2.1
 click-didyoumean==0.3.1
 click-plugins==1.1.1
 click-repl==0.3.0
+cron-descriptor==1.4.5
 Django==5.2
+django-celery-beat==2.8.1
 django-cors-headers==4.7.0
+django-timezone-field==7.1
 djangorestframework==3.16.0
 djangorestframework_simplejwt==5.5.0
 dotenv==0.9.9
+gunicorn==21.2.0
 idna==3.10
 kombu==5.5.4
 numpy==2.2.4
@@ -29,6 +33,7 @@ prompt_toolkit==3.0.51
 psycopg2-binary==2.9.10
 PyJWT==2.9.0
 PySocks==1.7.1
+python-crontab==3.2.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
 pytz==2025.2
@@ -45,4 +50,3 @@ tzlocal==5.3.1
 urllib3==2.5.0
 vine==5.1.0
 wcwidth==0.2.13
-gunicorn==21.2.0
