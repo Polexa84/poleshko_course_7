@@ -17,6 +17,7 @@ jobs:
           POSTGRES_USER: postgres  # Значение по умолчанию, можно изменить
           POSTGRES_PASSWORD: password  # Значение по умолчанию, можно изменить
           POSTGRES_DB: testdb  # Значение по умолчанию, можно изменить
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}  # Добавляем переменную DJANGO_SECRET_KEY
         options: >-
           --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
 
@@ -87,6 +88,7 @@ jobs:
           set -e  # Выходить при первой ошибке
           set -x  # Подробный вывод выполняемых команд
           echo "Changing directory to deployment folder..."
+          export DJANGO_SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}"
           PROJECT_DIR="/home/deployer/poleshko_hw_30"  # manage.py в корне
           cd "$PROJECT_DIR"
 
@@ -106,7 +108,7 @@ jobs:
     - name: Restart application
       run: |
         echo "Restarting application..."
-        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+        ssh ${{ secrets.SSH_USER }}@${{{ secrets.SERVER_IP }}} << 'EOF'
           set -e
           set -x
           sudo systemctl restart gunicorn.service  # Имя сервиса
