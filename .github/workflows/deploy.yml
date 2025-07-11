@@ -80,7 +80,7 @@ jobs:
     - name: Copy project files to server
       run: |
         echo "Copying project files to server..."
-        rsync -avz --exclude '__pycache__' . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
+        rsync -avz --exclude '__pycache__' -o StrictHostKeyChecking=no . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
         echo "Files copied."
 
     - name: Install dependencies, apply migrations, collect static files
@@ -91,11 +91,13 @@ jobs:
           set -x  # Подробный вывод выполняемых команд
           echo "Changing directory to deployment folder..."
           export DJANGO_SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}"
-          PROJECT_DIR="/home/deployer/poleshko_course_7"  # <---- ИЗМЕНИТЬ
+          PROJECT_DIR="/home/deployer/poleshko_course_7"
           cd "$PROJECT_DIR"
 
+          echo "Creating virtual environment..."
+          python3 -m venv venv  # <---- Создаем виртуальное окружение
           echo "Activating virtual environment..."
-          source /home/deployer/poleshko_course_7/venv/bin/activate  # Путь к виртуальному окружению
+          source /home/deployer/poleshko_course_7/venv/bin/activate
 
           echo "Installing project dependencies..."
           pip install -r requirements.txt
