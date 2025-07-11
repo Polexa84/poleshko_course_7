@@ -80,7 +80,8 @@ jobs:
     - name: Copy project files to server
       run: |
         echo "Copying project files to server..."
-        rsync -avz --delete --exclude '__pycache__' -o StrictHostKeyChecking=no . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
+        export RSYNC_RSH="ssh -o StrictHostKeyChecking=no"  # <---- Указываем опцию для ssh
+        rsync -avz --delete --exclude '__pycache__' . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
         echo "Files copied."
 
     - name: Install dependencies, apply migrations, collect static files
