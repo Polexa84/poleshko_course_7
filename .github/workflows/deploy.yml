@@ -91,11 +91,11 @@ jobs:
           set -x  # Подробный вывод выполняемых команд
           echo "Changing directory to deployment folder..."
           export DJANGO_SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}"
-          PROJECT_DIR="/home/deployer/poleshko_hw_30"  # manage.py в корне
+          PROJECT_DIR="/home/deployer/poleshko_course_7"  # <---- ИЗМЕНИТЬ
           cd "$PROJECT_DIR"
 
           echo "Activating virtual environment..."
-          source /home/deployer/poleshko_hw_30/venv/bin/activate  # Путь к виртуальному окружению
+          source /home/deployer/poleshko_course_7/venv/bin/activate  # Путь к виртуальному окружению
 
           echo "Installing project dependencies..."
           pip install -r requirements.txt
