@@ -92,6 +92,10 @@ jobs:
           set -x  # Подробный вывод выполняемых команд
           echo "Changing directory to deployment folder..."
           export DJANGO_SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}"
+          export POSTGRES_USER="postgres" # <---- Добавляем переменные для базы данных
+          export POSTGRES_PASSWORD="password" # <---- Добавляем переменные для базы данных
+          export POSTGRES_DB="testdb" # <---- Добавляем переменные для базы данных
+
           PROJECT_DIR="/home/deployer/poleshko_course_7"
           cd "$PROJECT_DIR"
 
