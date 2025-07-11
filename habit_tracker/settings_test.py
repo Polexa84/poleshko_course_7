@@ -1,5 +1,8 @@
 # settings_test.py
-from .settings import *  # Импортируем все из settings.py
+from .settings import *
 
-CELERY_TASK_ALWAYS_EAGER = True  # Отключаем Celery
-CELERY_TASK_STORE_EAGER_RESULT = True # Сохраняем результаты задач
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_STORE_EAGER_RESULT = True
+
+# Отключаем signal-ы
+DISABLE_SIGNALS = True
