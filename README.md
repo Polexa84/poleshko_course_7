@@ -116,58 +116,108 @@
 
     Это активирует бота и зарегистрирует пользователя (в зависимости от логики вашего бота).
 
-## CI/CD с GitHub Actions
+## CI/CD с GitHub Actions и деплой на Ubuntu Server
 
-### 1. Настройка секретов GitHub
+### 1. Настройка сервера
 
-*   В репозитории GitHub перейдите в `Settings` -> `Secrets` -> `Actions` и добавьте следующие секреты:
-    *   `SSH_KEY`: Содержимое вашего приватного SSH-ключа (для доступа к серверу).
-    *   `SSH_USER`: Имя пользователя для подключения к серверу (например, `deployer`).
-    *   `SERVER_IP`: IP-адрес вашего сервера.
-    *   `DJANGO_SECRET_KEY`: Секретный ключ Django (тот же, что и в `.env`).
-    *   `POSTGRES_PASSWORD`: Пароль от базы данных PostgreSQL на сервере (если отличается от локального).
-    *   `DEPLOY_DIR`: `/home/deployer/habit_tracker` (путь к директории деплоя на сервере).
+1.  **Подключитесь к серверу по SSH.**
+2.  **Установите необходимые пакеты:**
 
-### 2. Файл `.github/workflows/deploy.yml`
+    ```bash
+    sudo apt update
+    sudo apt install python3 python3-venv postgresql redis-server nginx gunicorn
+    ```
 
-```yaml
-name: Django CI/CD Pipeline
+3.  **Создайте пользователя `deployer` (если его нет):**
 
-on:
-  push:
-    branches:
-      - main  # или develop_1
+    ```bash
+    sudo adduser deployer
+    sudo usermod -aG sudo deployer
+    ```
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+4.  **Настройте PostgreSQL:**
 
-      - name: Set up SSH key
-        uses: webfactory/ssh-agent@v0.8.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_KEY }}
+    *   Установите пароль для пользователя `postgres`:
 
-      - name: Add known host
-        run: ssh-keyscan ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+        ```bash
+        sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'password';"
+        ```
 
-      - name: Deploy to server
-        run: |
-          export RSYNC_RSH="ssh -o StrictHostKeyChecking=no"
-          rsync -avz --delete --exclude '__pycache__' . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
+    *   Создайте базу данных `testdb`:
 
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << EOF
-            cd ${{ secrets.DEPLOY_DIR }}
-            python3 -m venv venv
-            source venv/bin/activate
-            pip install -r requirements.txt
-            python manage.py migrate
-            python manage.py collectstatic --noinput
-            sudo systemctl restart gunicorn  # или ваш сервис
-          EOF
+        ```bash
+        sudo -u postgres psql -c "CREATE DATABASE testdb;"
+        ```
 
+5.  **Создайте директорию для проекта:**
+
+    ```bash
+    sudo mkdir /home/deployer/habit_tracker
+    sudo chown deployer:deployer /home/deployer/habit_tracker
+    ```
+
+6.  **Установите и настройте Gunicorn:**
+
+    *   Создайте файл `/etc/systemd/system/gunicorn.service`:
+
+        ```ini
+        [Unit]
+        Description=Gunicorn daemon
+        After=network.target
+
+        [Service]
+        User=deployer
+        Group=www-data
+        WorkingDirectory=/home/deployer/habit_tracker
+        ExecStart=/home/deployer/habit_tracker/venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:8000  # или socket
+
+        [Install]
+        WantedBy=multi-user.target
+        ```
+
+    *   Включите и запустите Gunicorn:
+
+        ```bash
+        sudo systemctl enable gunicorn
+        sudo systemctl start gunicorn
+        ```
+
+7.  **Установите и настройте Nginx:**
+
+    *   Создайте файл `/etc/nginx/sites-available/habit_tracker`:
+
+        ```nginx
+        server {
+            listen 80;
+            server_name <ваш_домен или IP-адрес>;
+
+            location = /favicon.ico { access_log off; log_not_found off; }
+            location /static/ {
+                root /home/deployer/habit_tracker;
+            }
+
+            location / {
+                proxy_pass http://127.0.0.1:8000;  # или путь к сокету, если вы используете сокеты
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+        }
+        ```
+
+    *   Создайте символическую ссылку и перезапустите Nginx:
+
+        ```bash
+        sudo ln -s /etc/nginx/sites-available/habit_tracker /etc/nginx/sites-enabled/
+        sudo nginx -t
+        sudo systemctl restart nginx
+        ```
+
+8. **Настройка переменных окружения на сервере (Важно!)**
+
+   * Установите `python-dotenv` в виртуальном окружении на сервере:
+   ```bash
+   pip install python-dotenv
+   
 **Примечания:**
 
 *   Замените `<URL_вашего_репозитория>` на фактический URL вашего репозитория.
