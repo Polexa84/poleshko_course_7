@@ -18,109 +18,95 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: testdb
         options: >-
-          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 3
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
-      POSTGRES_DB_NAME: testdb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      DATABASE_URL: postgres://postgres:password@localhost:5432/testdb
       DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+
     steps:
-    - name: Check out code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
 
-    - name: Cache pip
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements.txt psycopg2-binary
 
-    - name: Set up database
-      working-directory: .
+    - name: Wait for PostgreSQL
+      run: |
+        for i in {1..10}; do
+          if pg_isready -h localhost -p 5432 -U postgres; then
+            echo "PostgreSQL is ready"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "PostgreSQL not ready in time"
+        exit 1
+
+    - name: Run migrations
       run: python manage.py migrate
       env:
-        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+        DATABASE_URL: postgres://postgres:password@localhost:5432/testdb
 
     - name: Run tests
-      working-directory: .
-      run: python manage.py test --settings=habit_tracker.settings_test
-      env:
-        DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      run: python manage.py test
 
   deploy:
     needs: test
     runs-on: ubuntu-latest
 
     steps:
-    - name: Check out code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Set up SSH
+    - name: Setup SSH
       uses: webfactory/ssh-agent@v0.8.0
       with:
-        ssh-private-key: ${{ secrets.SSH_KEY }}
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-    - name: Add server host key to known_hosts
+    - name: Add server to known hosts
       run: |
         mkdir -p ~/.ssh
-        ssh-keyscan ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
         chmod 600 ~/.ssh/known_hosts
 
-    - name: Copy project files to server
+    - name: Rsync deployment
       run: |
-        echo "Copying project files to server..."
-        export RSYNC_RSH="ssh -o StrictHostKeyChecking=no"  # <---- Указываем опцию для ssh
-        rsync -avz --delete --exclude '__pycache__' . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
-        echo "Files copied."
+        rsync -avz --delete \
+          --exclude '__pycache__' \
+          --exclude '.env' \
+          --exclude '.git' \
+          ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
 
-    - name: Install dependencies, apply migrations, collect static files
+    - name: Remote deployment commands
       run: |
-        echo "Executing commands on server..."
-        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          set -e  # Выходить при первой ошибке
-          set -x  # Подробный вывод выполняемых команд
-          echo "Changing directory to deployment folder..."
-          export DJANGO_SECRET_KEY="${{ secrets.DJANGO_SECRET_KEY }}"
-          export POSTGRES_USER="postgres" # <---- Добавляем переменные для базы данных
-          export POSTGRES_PASSWORD="password" # <---- Добавляем переменные для базы данных
-          export POSTGRES_DB="testdb" # <---- Добавляем переменные для базы данных
-
-          PROJECT_DIR="/home/deployer/poleshko_course_7"
-          cd "$PROJECT_DIR"
-
-          echo "Creating virtual environment..."
-          python3 -m venv venv  # <---- Создаем виртуальное окружение
-          echo "Activating virtual environment..."
-          source /home/deployer/poleshko_course_7/venv/bin/activate
-
-          echo "Installing project dependencies..."
-          pip install -r requirements.txt
-          echo "Applying database migrations..."
-          python manage.py migrate
-          echo "Collecting static files..."
-          python manage.py collectstatic --noinput
-          echo "Deployment commands executed successfully."
+        ssh -o StrictHostKeyChecking=no \
+          ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          set -euxo pipefail
+          cd ${{ secrets.DEPLOY_DIR }}
+          
+          # Проверяем существование venv
+          if [ ! -d "venv" ]; then
+            python3 -m venv venv
+          fi
+          
+          source venv/bin/activate
+          pip install -r requirements.txt psycopg2-binary
+          
+          # Используем правильные параметры БД для продакшена
+          export DATABASE_URL="postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@${{ secrets.DB_HOST }}:${{ secrets.DB_PORT }}/${{ secrets.DB_NAME }}"
+          
+          python manage.py migrate --no-input
+          python manage.py collectstatic --no-input
+          
+          sudo systemctl restart gunicorn
+          sudo systemctl reload nginx
         EOF
-        echo "Commands executed on server."
-
-    - name: Restart application
-      run: |
-        echo "Restarting application..."
-        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-          set -e
-          set -x
-          sudo systemctl restart gunicorn.service  # Имя сервиса
-          sudo systemctl reload nginx  # Перезагрузка Nginx
-        EOF
-        echo "Application restarted."
