@@ -116,6 +116,58 @@
 
     Это активирует бота и зарегистрирует пользователя (в зависимости от логики вашего бота).
 
+## CI/CD с GitHub Actions
+
+### 1. Настройка секретов GitHub
+
+*   В репозитории GitHub перейдите в `Settings` -> `Secrets` -> `Actions` и добавьте следующие секреты:
+    *   `SSH_KEY`: Содержимое вашего приватного SSH-ключа (для доступа к серверу).
+    *   `SSH_USER`: Имя пользователя для подключения к серверу (например, `deployer`).
+    *   `SERVER_IP`: IP-адрес вашего сервера.
+    *   `DJANGO_SECRET_KEY`: Секретный ключ Django (тот же, что и в `.env`).
+    *   `POSTGRES_PASSWORD`: Пароль от базы данных PostgreSQL на сервере (если отличается от локального).
+    *   `DEPLOY_DIR`: `/home/deployer/habit_tracker` (путь к директории деплоя на сервере).
+
+### 2. Файл `.github/workflows/deploy.yml`
+
+```yaml
+name: Django CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main  # или develop_1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Add known host
+        run: ssh-keyscan ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        run: |
+          export RSYNC_RSH="ssh -o StrictHostKeyChecking=no"
+          rsync -avz --delete --exclude '__pycache__' . ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_DIR }}
+
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} << EOF
+            cd ${{ secrets.DEPLOY_DIR }}
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install -r requirements.txt
+            python manage.py migrate
+            python manage.py collectstatic --noinput
+            sudo systemctl restart gunicorn  # или ваш сервис
+          EOF
+
 **Примечания:**
 
 *   Замените `<URL_вашего_репозитория>` на фактический URL вашего репозитория.
